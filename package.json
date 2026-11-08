@@ -1,0 +1,13 @@
+{
+  "name": "monster-plaza-server",
+  "version": "1.0.0",
+  "description": "HWer工具箱·妖怪冒险多人广场联机服务器（零依赖）",
+  "main": "monster-server.js",
+  "scripts": {
+    "start": "node monster-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

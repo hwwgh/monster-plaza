@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: monster-plaza
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node monster-server.js
+    healthCheckPath: /health
