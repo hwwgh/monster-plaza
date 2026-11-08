@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>妖怪广场 · 管理后台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f1f3f5; color: #1f2937; padding: 16px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card h2 { font-size: 15px; margin-bottom: 12px; color: #111827; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stat { flex: 1; min-width: 100px; background: #f8fafc; border-radius: 8px; padding: 10px; text-align: center; }
+  .stat .v { font-size: 20px; font-weight: 700; color: #0a7cff; }
+  .stat .l { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  input, button { font-family: inherit; font-size: 13px; border-radius: 8px; border: 1px solid #d1d5db; padding: 8px 10px; outline: none; }
+  input:focus { border-color: #0a7cff; }
+  button { cursor: pointer; background: #0a7cff; color: #fff; border: none; }
+  button:hover { opacity: .9; }
+  button.ghost { background: #f3f4f6; color: #374151; }
+  button.warn { background: #d94838; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+  .row input[type=text], .row input[type=password], .row input[type=number] { flex: 1; min-width: 120px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f1f3f5; }
+  th { color: #6b7280; font-weight: 500; }
+  td button { padding: 4px 10px; font-size: 11px; }
+  .cfg { display: grid; grid-template-columns: 1fr 90px; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .cfg input { width: 100%; }
+  .tip { font-size: 11px; color: #9ca3af; margin-top: 8px; line-height: 1.6; }
+  .msg { font-size: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; display: none; }
+  .msg.ok { display: block; background: #ecfdf5; color: #065f46; }
+  .msg.err { display: block; background: #fef2f2; color: #991b1b; }
+  #loginCard { max-width: 360px; margin: 60px auto 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>妖怪广场 · 管理后台</h1>
+  <div class="sub">monster-plaza.onrender.com</div>
+
+  <div id="loginCard" class="card">
+    <h2>管理员登录</h2>
+    <div class="msg" id="loginMsg"></div>
+    <div class="row">
+      <input type="password" id="keyInput" placeholder="管理员密码" onkeydown="if(event.key==='Enter')login()">
+      <button onclick="login()">登录</button>
+    </div>
+  </div>
+
+  <div id="panel" style="display:none">
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="v" id="stOnline">-</div><div class="l">在线妖怪</div></div>
+        <div class="stat"><div class="v" id="stListings">-</div><div class="l">在售摊位</div></div>
+        <div class="stat"><div class="v" id="stOffers">-</div><div class="l">进行中交易</div></div>
+        <div class="stat"><div class="v" id="stChat">-</div><div class="l">聊天条数</div></div>
+      </div>
+      <div class="row">
+        <span style="font-size:12px;color:#6b7280;flex:1" id="updatedAt">-</span>
+        <button class="ghost" onclick="refresh()">立即刷新</button>
+        <button class="warn" onclick="logout()">退出</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>在线玩家</h2>
+      <table>
+        <thead><tr><th>名字</th><th>等级</th><th>金币</th><th>地区</th><th>操作</th></tr></thead>
+        <tbody id="playerRows"><tr><td colspan="5" style="color:#9ca3af">暂无在线玩家</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>全服礼包</h2>
+      <div class="msg" id="giftAllMsg"></div>
+      <div class="row">
+        <input type="number" id="giftAllAmount" placeholder="金币数量" style="max-width:130px">
+        <input type="text" id="giftAllMsgInput" placeholder="留言（可留空）">
+        <button onclick="giftAll()">发给全体在线</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>系统公告</h2>
+      <div class="msg" id="sayMsg"></div>
+      <div class="row">
+        <input type="text" id="sayText" placeholder="公告内容（60 字内）">
+        <button onclick="adminSay()">发送到广场</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>游戏参数（实时下发，玩家下次刷新生效）</h2>
+      <div class="msg" id="cfgMsg"></div>
+      <div class="cfg">
+        <label>打工工资倍率（0.1 - 10）</label><input type="number" id="cfgWage" step="0.1">
+        <label>挖宝成功率倍率（0.1 - 3）</label><input type="number" id="cfgTreasure" step="0.1">
+        <label>遭遇妖怪概率倍率（0.1 - 3）</label><input type="number" id="cfgEncounter" step="0.1">
+        <label>魔王触发最低等级（1 - 999）</label><input type="number" id="cfgDemonLevel">
+        <label>魔王事件权重（0 - 100，0 = 关闭）</label><input type="number" id="cfgDemonWeight">
+        <label>单次赠币上限（20 - 5000）</label><input type="number" id="cfgGiftMax">
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button onclick="saveConfig()">保存参数</button>
+        <button class="ghost" onclick="fillConfig()">还原当前值</button>
+      </div>
+      <div class="tip">参数保存在服务器内存中，服务器重启后会恢复默认值，需要重新设置。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let ADMIN_KEY = localStorage.getItem('plaza_admin_key') || '';
+let timer = null;
+
+function $(id) { return document.getElementById(id); }
+function showMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  setTimeout(function () { el.className = 'msg'; }, 4000);
+}
+
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return { status: res.status, data: await res.json() };
+}
+
+async function login() {
+  const key = $('keyInput').value.trim();
+  if (!key) return;
+  const r = await post('/admin/login', { key: key });
+  if (r.status === 200 && r.data.ok) {
+    ADMIN_KEY = key;
+    localStorage.setItem('plaza_admin_key', key);
+    enter();
+  } else {
+    showMsg('loginMsg', '密码错误', false);
+  }
+}
+
+function logout() {
+  localStorage.removeItem('plaza_admin_key');
+  ADMIN_KEY = '';
+  location.reload();
+}
+
+function enter() {
+  $('loginCard').style.display = 'none';
+  $('panel').style.display = 'block';
+  refresh();
+  if (timer) clearInterval(timer);
+  timer = setInterval(refresh, 5000);
+}
+
+async function refresh() {
+  const r = await post('/admin/stats', { key: ADMIN_KEY });
+  if (r.status !== 200) { showMsg('cfgMsg', '登录已失效，请刷新页面重新登录', false); if (timer) clearInterval(timer); return; }
+  const d = r.data;
+  $('stOnline').textContent = d.online;
+  $('stListings').textContent = d.listings;
+  $('stOffers').textContent = d.offers;
+  $('stChat').textContent = d.chat;
+  $('updatedAt').textContent = '更新于 ' + new Date().toLocaleTimeString();
+  const rows = d.players.map(function (p) {
+    return '<tr><td>' + esc(p.name) + '</td><td>Lv.' + p.level + '</td><td>' + p.coins +
+      '</td><td>' + esc(p.area) + '</td><td><button class="ghost" onclick="giftOne(\'' +
+      esc(p.pid) + '\',\'' + esc(p.name) + '\')">发礼包</button></td></tr>';
+  });
+  $('playerRows').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5" style="color:#9ca3af">暂无在线玩家</td></tr>';
+  fillConfig(d.config);
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
+
+function fillConfig(c) {
+  c = c || lastConfig;
+  if (!c) return;
+  lastConfig = c;
+  $('cfgWage').value = c.wageMultiplier;
+  $('cfgTreasure').value = c.treasureRate;
+  $('cfgEncounter').value = c.encounterRate;
+  $('cfgDemonLevel').value = c.demonMinLevel;
+  $('cfgDemonWeight').value = c.demonWeight;
+  $('cfgGiftMax').value = c.giftMax;
+}
+let lastConfig = null;
+
+async function saveConfig() {
+  const config = {
+    wageMultiplier: parseFloat($('cfgWage').value),
+    treasureRate: parseFloat($('cfgTreasure').value),
+    encounterRate: parseFloat($('cfgEncounter').value),
+    demonMinLevel: parseInt($('cfgDemonLevel').value, 10),
+    demonWeight: parseInt($('cfgDemonWeight').value, 10),
+    giftMax: parseInt($('cfgGiftMax').value, 10)
+  };
+  const r = await post('/admin/config', { key: ADMIN_KEY, config: config });
+  if (r.status === 200 && r.data.ok) {
+    lastConfig = r.data.config;
+    fillConfig(r.data.config);
+    showMsg('cfgMsg', '参数已保存并下发', true);
+  } else {
+    showMsg('cfgMsg', '保存失败：' + (r.data && r.data.error), false);
+  }
+}
+
+async function giftAll() {
+  const amount = parseInt($('giftAllAmount').value, 10);
+  if (!(amount > 0)) { showMsg('giftAllMsg', '请输入有效金额', false); return; }
+  const r = await post('/admin/gift-all', { key: ADMIN_KEY, amount: amount, msg: $('giftAllMsgInput').value.trim() });
+  if (r.status === 200 && r.data.ok) {
+    showMsg('giftAllMsg', '已向 ' + r.data.count + ' 名在线玩家发放礼包', true);
+    $('giftAllAmount').value = '';
+    $('giftAllMsgInput').value = '';
+  } else {
+    showMsg('giftAllMsg', '发放失败：' + (r.data && r.data.error), false);
+  }
+}
+
+async function giftOne(pid, name) {
+  const amountStr = prompt('给「' + name + '」发多少金币？');
+  if (amountStr === null) return;
+  const amount = parseInt(amountStr, 10);
+  if (!(amount > 0)) { alert('金额无效'); return; }
+  const msg = prompt('留言（可留空）') || '';
+  const r = await post('/admin/gift-one', { key: ADMIN_KEY, pid: pid, amount: amount, msg: msg });
+  if (r.status === 200 && r.data.ok) {
+    alert('已发给「' + name + '」');
+  } else {
+    alert('发放失败：' + (r.data && r.data.error));
+  }
+}
+
+async function adminSay() {
+  const text = $('sayText').value.trim();
+  if (!text) { showMsg('sayMsg', '请输入公告内容', false); return; }
+  const r = await post('/admin/say', { key: ADMIN_KEY, text: text });
+  if (r.status === 200 && r.data.ok) {
+    showMsg('sayMsg', '公告已发送', true);
+    $('sayText').value = '';
+  } else {
+    showMsg('sayMsg', '发送失败', false);
+  }
+}
+
+if (ADMIN_KEY) enter();
+</script>
+</body>
+</html>

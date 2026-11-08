@@ -8,6 +8,8 @@
 //   3. 卖家收到通知，可直接同意（/agree），或修改价格（/price）后等买家确认
 //   4. 双方同意后交易成功（/agree），服务器向双方推送交割事件（kind=deal）
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8420;
 const ONLINE_TTL_MS = 30 * 1000;
@@ -15,6 +17,17 @@ const CHAT_KEEP = 50;
 const EVENT_KEEP = 20;
 const OFFER_TTL_MS = 10 * 60 * 1000;
 const MAX_LISTINGS = 3;
+const ADMIN_KEY = process.env.ADMIN_KEY || 'hwwgh#123';
+
+// 管理员可在线调整的游戏参数（内存态，重启恢复默认）
+let gameConfig = {
+  wageMultiplier: 1.0,   // 打工工资倍率
+  treasureRate: 1.0,     // 挖宝成功率倍率
+  encounterRate: 1.0,    // 遭遇妖怪概率倍率
+  demonMinLevel: 40,     // 魔王触发最低等级
+  demonWeight: 6,        // 魔王事件权重
+  giftMax: 500           // 单次赠币上限
+};
 
 const players = new Map();   // pid -> { pid, name, level, coins, area, items: [{id, name, price}], lastSeen }
 const mailboxes = new Map(); // pid -> events[]
@@ -34,6 +47,13 @@ function num(value, min, max, fallback) {
     return fallback;
   }
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function numf(value, min, max, fallback) {
+  if (typeof value !== 'number' || !isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value));
 }
 
 function prunePlayers() {
@@ -147,6 +167,11 @@ const server = http.createServer(async (req, res) => {
         offers: offers.size
       });
     }
+    if (req.method === 'GET' && url === '/admin') {
+      const html = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    }
     if (req.method !== 'POST') {
       return send(res, 405, { ok: false, error: 'method' });
     }
@@ -195,7 +220,8 @@ const server = http.createServer(async (req, res) => {
         players: onlinePlayers(pid),
         events: takeEvents(pid),
         chat: chat.slice(-CHAT_KEEP),
-        listings: allListings()
+        listings: allListings(),
+        config: gameConfig
       });
     }
 
@@ -222,7 +248,7 @@ const server = http.createServer(async (req, res) => {
       if (!fromId || !toId || !players.has(toId)) {
         return send(res, 400, { ok: false, error: 'target' });
       }
-      const amount = num(body.amount, 1, 500, 0);
+      const amount = num(body.amount, 1, gameConfig.giftMax, 0);
       if (amount <= 0) {
         return send(res, 400, { ok: false, error: 'amount' });
       }
@@ -407,6 +433,97 @@ const server = http.createServer(async (req, res) => {
         self.lastSeen = now();
       }
       return send(res, 200, { ok: true });
+    }
+
+    // ===== 管理后台 =====
+
+    if (url.indexOf('/admin') === 0) {
+      const key = str(body.key, 64, '');
+      if (key !== ADMIN_KEY) {
+        return send(res, 401, { ok: false, error: 'key' });
+      }
+      if (url === '/admin/login') {
+        return send(res, 200, { ok: true });
+      }
+      if (url === '/admin/stats') {
+        prunePlayers();
+        pruneOffers();
+        let activeOffers = 0;
+        for (const offer of offers.values()) {
+          if (offer.status === 'wait_seller' || offer.status === 'wait_buyer') {
+            activeOffers += 1;
+          }
+        }
+        return send(res, 200, {
+          ok: true,
+          online: players.size,
+          players: onlinePlayers(),
+          listings: allListings().length,
+          offers: activeOffers,
+          chat: chat.length,
+          config: gameConfig
+        });
+      }
+      if (url === '/admin/config') {
+        const c = body.config && typeof body.config === 'object' ? body.config : {};
+        gameConfig.wageMultiplier = numf(c.wageMultiplier, 0.1, 10, gameConfig.wageMultiplier);
+        gameConfig.treasureRate = numf(c.treasureRate, 0.1, 3, gameConfig.treasureRate);
+        gameConfig.encounterRate = numf(c.encounterRate, 0.1, 3, gameConfig.encounterRate);
+        gameConfig.demonMinLevel = num(c.demonMinLevel, 1, 999, gameConfig.demonMinLevel);
+        gameConfig.demonWeight = num(c.demonWeight, 0, 100, gameConfig.demonWeight);
+        gameConfig.giftMax = num(c.giftMax, 20, 5000, gameConfig.giftMax);
+        return send(res, 200, { ok: true, config: gameConfig });
+      }
+      if (url === '/admin/gift-all') {
+        const amount = num(body.amount, 1, gameConfig.giftMax, 0);
+        if (amount <= 0) {
+          return send(res, 400, { ok: false, error: 'amount' });
+        }
+        prunePlayers();
+        const msg = str(body.msg, 40, '');
+        let count = 0;
+        for (const pid of players.keys()) {
+          pushEvent(pid, {
+            kind: 'coin',
+            from: '系统管理员',
+            amount: amount,
+            msg: msg,
+            ts: now()
+          });
+          count += 1;
+        }
+        return send(res, 200, { ok: true, count: count });
+      }
+      if (url === '/admin/gift-one') {
+        const toId = str(body.pid, 64, '');
+        const amount = num(body.amount, 1, gameConfig.giftMax, 0);
+        if (!toId || !players.has(toId)) {
+          return send(res, 400, { ok: false, error: 'target' });
+        }
+        if (amount <= 0) {
+          return send(res, 400, { ok: false, error: 'amount' });
+        }
+        pushEvent(toId, {
+          kind: 'coin',
+          from: '系统管理员',
+          amount: amount,
+          msg: str(body.msg, 40, ''),
+          ts: now()
+        });
+        return send(res, 200, { ok: true });
+      }
+      if (url === '/admin/say') {
+        const text = str(body.text, 60, '');
+        if (!text) {
+          return send(res, 400, { ok: false, error: 'text' });
+        }
+        chat.push({ ts: now(), name: '系统公告', text: text });
+        while (chat.length > CHAT_KEEP) {
+          chat.shift();
+        }
+        return send(res, 200, { ok: true });
+      }
+      return send(res, 404, { ok: false, error: 'notfound' });
     }
 
     return send(res, 404, { ok: false, error: 'notfound' });
